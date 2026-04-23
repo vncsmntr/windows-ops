@@ -1,8 +1,8 @@
 <#
 .SYNOPSIS
-    Advanced System Health Guardian.
+    System Health Guardian.
 .DESCRIPTION
-    Aggressive repair for persistent corruption. Fixes the "Corruption Loop" and visual bugs.
+    Automated tool to check and repair Windows image, system files, and disk integrity.
 #>
 
 $ErrorActionPreference = "Stop"
@@ -15,28 +15,29 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 
 Clear-Host
 Write-Host "==========================================================" -ForegroundColor Cyan
-Write-Host "         SYSTEM HEALTH GUARDIAN - ADVANCED REPAIR         " -ForegroundColor Cyan
+Write-Host "                  SYSTEM HEALTH GUARDIAN                  " -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
 
-# 1. Reset DISM Logs
-if (Test-Path "C:\Windows\Logs\DISM\dism.log") {
-    Remove-Item "C:\Windows\Logs\DISM\dism.log" -ErrorAction SilentlyContinue
+# 1. Quick Health Check (DISM)
+Write-Host "`n[1/3] Checking System Image Status..." -ForegroundColor Yellow
+$check = dism /online /cleanup-image /checkhealth
+
+if ($check -match "No component store corruption detected") {
+    Write-Host "SUCCESS: No corruption found. System is healthy!" -ForegroundColor Green
+    Write-Host ("-" * 58) -ForegroundColor Green
+    Write-Host "Exiting process..." -ForegroundColor Gray
+    Start-Sleep -Seconds 2
+    exit
 }
 
-# 2. DISM Phase (The loop breaker)
-Write-Host "`n[1/3] Analyzing & Repairing System Image (DISM)..." -ForegroundColor Yellow
+# 2. If corruption is found, proceed with Repair
+Write-Host "Corruption detected! Starting repair process..." -ForegroundColor Magenta
 
-# Step A: Component Store Cleanup
-Write-Host " -> Cleaning up component store (WinSxS)..." -ForegroundColor Gray
+Write-Host " -> Cleaning component store..." -ForegroundColor Gray
 dism /online /cleanup-image /startcomponentcleanup
 
-# Step B: Deep Scan and Repair
-Write-Host " -> Performing deep scan..." -ForegroundColor Gray
-$repair = dism /online /cleanup-image /restorehealth
-
-if ($repair -match "successfully") {
-    Write-Host "SUCCESS: Image repaired and component store cleaned." -ForegroundColor Green
-}
+Write-Host " -> Restoring health..." -ForegroundColor Gray
+dism /online /cleanup-image /restorehealth
 
 # 3. SFC Phase
 Write-Host "`n[2/3] Verifying System Files (SFC)..." -ForegroundColor Yellow
@@ -46,19 +47,15 @@ sfc /scannow
 $SystemDrive = $env:SystemDrive
 Write-Host "`n[3/3] Scheduling Disk Repair on $SystemDrive..." -ForegroundColor Yellow
 
-# The most reliable way to schedule Chkdsk for next boot:
 try {
-    # Schedules a full chkdsk on next reboot
     $null = echo y | chkdsk $SystemDrive /f
     Write-Host "SUCCESS: Disk repair scheduled for the next reboot." -ForegroundColor Green
 } catch {
-    Write-Host "FAILURE: Could not schedule Chkdsk automatically." -ForegroundColor Red
+    Write-Host "FAILURE: Could not schedule Chkdsk." -ForegroundColor Red
 }
 
-# Corrected visual line syntax
 Write-Host ("-" * 58) -ForegroundColor Green
 Write-Host "SYSTEM MAINTENANCE COMPLETED!" -ForegroundColor Green
-Write-Host "Windows will verify your drive during the next boot sequence." -ForegroundColor White
 
 $selection = Read-Host "`nWould you like to restart your computer now? (Y/N)"
 if ($selection -match "Y|y") {
@@ -66,5 +63,5 @@ if ($selection -match "Y|y") {
     Start-Sleep -Seconds 5
     Restart-Computer -Force
 } else {
-    Write-Host "Please reboot manually to finalize disk repairs." -ForegroundColor Cyan
+    Write-Host "Please reboot manually to finalize repairs." -ForegroundColor Cyan
 }
