@@ -1,50 +1,63 @@
-# Name: System Health Guardian
-# Description: Automated DISM, SFC, and Chkdsk integrity check after power failure or crashes.
-# License: MIT
+<#
+.SYNOPSIS
+    Advanced System Health Guardian.
+.DESCRIPTION
+    Aggressive repair for persistent corruption. Fixes the "Corruption Loop" and visual bugs.
+#>
+
 $ErrorActionPreference = "Stop"
 
-# 0. Check for Administrative Privileges
+# 0. Admin Check
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    Write-Host "ERROR: This script must be run as Administrator!" -ForegroundColor Red
+    Write-Host "ERROR: Admin privileges required!" -ForegroundColor Red
     Pause ; exit
 }
 
 Clear-Host
 Write-Host "==========================================================" -ForegroundColor Cyan
-Write-Host "                   SYSTEM HEALTH GUARDIAN                 " -ForegroundColor Cyan
+Write-Host "         SYSTEM HEALTH GUARDIAN - ADVANCED REPAIR         " -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
 
-# 1. DISM - Deployment Image Servicing and Management
-Write-Host "`n[1/3] Checking System Image Integrity (DISM)..." -ForegroundColor Yellow
-# Fast check for corruption
-$dismCheck = dism /online /cleanup-image /checkhealth
-if ($dismCheck -match "corrupt") {
-    Write-Host "Corruption detected! Starting deep repair..." -ForegroundColor Magenta
-    dism /online /cleanup-image /restorehealth
-} else {
-    Write-Host "SUCCESS: System image is healthy. Deep repair skipped." -ForegroundColor Green
+# 1. Reset DISM Logs
+if (Test-Path "C:\Windows\Logs\DISM\dism.log") {
+    Remove-Item "C:\Windows\Logs\DISM\dism.log" -ErrorAction SilentlyContinue
 }
 
-# 2. SFC - System File Checker
+# 2. DISM Phase (The loop breaker)
+Write-Host "`n[1/3] Analyzing & Repairing System Image (DISM)..." -ForegroundColor Yellow
+
+# Step A: Component Store Cleanup
+Write-Host " -> Cleaning up component store (WinSxS)..." -ForegroundColor Gray
+dism /online /cleanup-image /startcomponentcleanup
+
+# Step B: Deep Scan and Repair
+Write-Host " -> Performing deep scan..." -ForegroundColor Gray
+$repair = dism /online /cleanup-image /restorehealth
+
+if ($repair -match "successfully") {
+    Write-Host "SUCCESS: Image repaired and component store cleaned." -ForegroundColor Green
+}
+
+# 3. SFC Phase
 Write-Host "`n[2/3] Verifying System Files (SFC)..." -ForegroundColor Yellow
 sfc /scannow
 
-# 3. Chkdsk - Disk Structure Repair
+# 4. Chkdsk Phase
 $SystemDrive = $env:SystemDrive
-Write-Host "`n[3/3] Scheduling Disk Check on $SystemDrive..." -ForegroundColor Yellow
+Write-Host "`n[3/3] Scheduling Disk Repair on $SystemDrive..." -ForegroundColor Yellow
 
+# The most reliable way to schedule Chkdsk for next boot:
 try {
-    # Using fsutil to set the dirty bit is a more performance-oriented way to trigger boot-time repair
-    # Alternatively, using the standard chkdsk schedule command
-    $chkdskCommand = "echo Y | chkdsk $SystemDrive /f"
-    Start-Process cmd.exe -ArgumentList "/c $chkdskCommand" -WindowStyle Hidden
+    # Schedules a full chkdsk on next reboot
+    $null = echo y | chkdsk $SystemDrive /f
     Write-Host "SUCCESS: Disk repair scheduled for the next reboot." -ForegroundColor Green
 } catch {
-    Write-Host "FAILURE: Could not schedule Chkdsk. Please run 'chkdsk /f' manually." -ForegroundColor Red
+    Write-Host "FAILURE: Could not schedule Chkdsk automatically." -ForegroundColor Red
 }
 
-Write-Host "`n" + "-"*30 -ForegroundColor Green
-Write-Host "MAINTENANCE PROCESS COMPLETED!" -ForegroundColor Green
+# Corrected visual line syntax
+Write-Host ("-" * 58) -ForegroundColor Green
+Write-Host "SYSTEM MAINTENANCE COMPLETED!" -ForegroundColor Green
 Write-Host "Windows will verify your drive during the next boot sequence." -ForegroundColor White
 
 $selection = Read-Host "`nWould you like to restart your computer now? (Y/N)"
@@ -53,5 +66,5 @@ if ($selection -match "Y|y") {
     Start-Sleep -Seconds 5
     Restart-Computer -Force
 } else {
-    Write-Host "Restart cancelled. Remember to reboot manually to apply disk repairs." -ForegroundColor Cyan
+    Write-Host "Please reboot manually to finalize disk repairs." -ForegroundColor Cyan
 }
